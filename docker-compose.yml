@@ -1,0 +1,329 @@
+# docker-compose.yml
+# SafeStream AI - Phase 1: infraestructure + ingestion producer.
+#
+# Brings up the message broker (Kafka in KRaft mode), the relational store
+# (PostgreSQL) and the vector store (Qdrant), plus the producer that simulates
+# a streaming feed of user generated content into the broker.
+
+name: safestream-ai
+
+services:
+  # ---------------------------------------------------------------------------
+  # Kafka broker (KRaft mode, no Zookeeper). Two listeners:
+  #   - PLAINTEXT   on kafka:9092 for traffic between containers
+  #   - EXTERNAL    on localhost:29092 for traffic from the host machine
+  # ---------------------------------------------------------------------------
+  kafka:
+    image: apache/kafka:3.8.0
+    container_name: safestream-kafka
+    ports:
+      - "29092:29092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_NUM_PARTITIONS: 3
+      CLUSTER_ID: "4L6g3nShT-eMCtK--X86sw"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
+  # One-shot job that creates the topics this project relies on.
+  # Idempotent: --if-not-exists keeps subsequent runs cheap.
+  # ---------------------------------------------------------------------------
+  kafka-init:
+    image: apache/kafka:3.8.0
+    container_name: safestream-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -euo pipefail
+        BROKER="kafka:9092"
+        for topic in content.text.raw content.image.raw predictions.results audits.events content.dead-letter; do
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server "$$BROKER" \
+            --create --if-not-exists --topic "$$topic" \
+            --partitions 3 --replication-factor 1
+        done
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server "$$BROKER" --list
+    restart: "no"
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL: stores events, predictions and human audit decisions.
+  # Schema is now managed by Alembic (see the `migrate` service below).
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: safestream-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-safestream}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-safestream}
+      POSTGRES_DB: ${POSTGRES_DB:-safestream}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ---------------------------------------------------------------------------
+  # One-shot Alembic migration runner. Reuses the inference image so the
+  # migration code travels with the application code.
+  # ---------------------------------------------------------------------------
+  migrate:
+    build:
+      context: .
+      dockerfile: services/inference/Dockerfile
+    image: safestream/inference:0.4.0
+    pull_policy: build
+    container_name: safestream-migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-safestream}:${POSTGRES_PASSWORD:-safestream}@postgres:5432/${POSTGRES_DB:-safestream}
+      LOG_LEVEL: INFO
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+
+  # ---------------------------------------------------------------------------
+  # Qdrant: vector store for embeddings of moderated content.
+  # ---------------------------------------------------------------------------
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    container_name: safestream-qdrant
+    ports:
+      - "6333:6333" # HTTP / dashboard
+      - "6334:6334" # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ---------------------------------------------------------------------------
+  # Producer: streams text events from the Jigsaw dataset (or the bundled
+  # synthetic sample) into Kafka at a configurable rate.
+  # ---------------------------------------------------------------------------
+  producer:
+    build:
+      context: .
+      dockerfile: services/producer/Dockerfile
+    container_name: safestream-producer
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC_TEXT: content.text.raw
+      DATASET_PATH: ${DATASET_PATH:-/app/data/sample_comments.csv}
+      EVENTS_PER_SECOND: ${EVENTS_PER_SECOND:-10}
+      LOOP_DATASET: ${LOOP_DATASET:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ./services/producer/data:/app/data:ro
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Inference: FastAPI app + background Kafka worker.
+  # Loads HF models in RAM at startup, classifies events, persists results.
+  # ---------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # API: FastAPI HTTP + WebSocket surface. Loads HF models in RAM at startup.
+  # Worker and broadcaster are disabled here - the dedicated `worker` service
+  # below handles the moderation pipeline. The broadcaster still runs inside
+  # this process because it serves the WebSocket clients connected to it.
+  # ---------------------------------------------------------------------------
+  inference:
+    build:
+      context: .
+      dockerfile: services/inference/Dockerfile
+    image: safestream/inference:0.4.0
+    pull_policy: build
+    container_name: safestream-inference
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      qdrant:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment: &inference_env
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+      # Kafka
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC_TEXT_IN: content.text.raw
+      KAFKA_TOPIC_IMAGE_IN: content.image.raw
+      KAFKA_TOPIC_PREDICTIONS_OUT: predictions.results
+      KAFKA_TOPIC_DLQ: content.dead-letter
+      KAFKA_CONSUMER_GROUP: safestream-inference
+
+      # Database
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-safestream}:${POSTGRES_PASSWORD:-safestream}@postgres:5432/${POSTGRES_DB:-safestream}
+
+      # Models
+      ENABLE_TEXT: ${ENABLE_TEXT:-true}
+      ENABLE_VISION: ${ENABLE_VISION:-false}
+      ENABLE_EMBEDDINGS: ${ENABLE_EMBEDDINGS:-true}
+      NLP_MODEL_NAME: ${NLP_MODEL_NAME:-unitary/toxic-bert}
+      NLP_MAX_LENGTH: ${NLP_MAX_LENGTH:-256}
+      CV_MODEL_NAME: ${CV_MODEL_NAME:-Falconsai/nsfw_image_detection}
+      EMBEDDING_MODEL_NAME: ${EMBEDDING_MODEL_NAME:-sentence-transformers/all-MiniLM-L6-v2}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-384}
+
+      # Vector store
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-safestream_sanctioned}
+      INDEX_VERDICTS: ${INDEX_VERDICTS:-review,block}
+
+      # Verdict thresholds
+      THRESHOLD_REVIEW: ${THRESHOLD_REVIEW:-0.4}
+      THRESHOLD_BLOCK: ${THRESHOLD_BLOCK:-0.8}
+
+      # Auth & rate limit
+      API_KEYS: ${API_KEYS:-}
+      RATE_LIMIT: ${RATE_LIMIT:-100/minute}
+
+      # Worker / broadcaster: switched OFF in the API process so we don't
+      # double-consume from Kafka. The dedicated `worker` service handles
+      # moderation; the broadcaster runs alongside the API because it
+      # needs to push to WebSocket clients held by the same process.
+      WORKER_ENABLED: "false"
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
+      WORKER_MAX_RETRIES: ${WORKER_MAX_RETRIES:-3}
+      BROADCASTER_ENABLED: ${BROADCASTER_ENABLED:-true}
+      BROADCASTER_CONSUMER_GROUP: ${BROADCASTER_CONSUMER_GROUP:-safestream-broadcaster}
+
+      # Observability
+      OTEL_ENABLED: ${OTEL_ENABLED:-false}
+      OTEL_SERVICE_NAME: safestream-inference
+      OTEL_EXPORTER_ENDPOINT: ${OTEL_EXPORTER_ENDPOINT:-http://otel-collector:4317}
+
+      # CORS
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:8080}
+    volumes:
+      - hf_cache:/app/.hf-cache
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/healthz >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Worker: dedicated container for the Kafka moderation pipeline. Same
+  # image as `inference`, different command and environment overrides.
+  # Scale with: docker compose up --scale worker=3
+  # ---------------------------------------------------------------------------
+  worker:
+    build:
+      context: .
+      dockerfile: services/inference/Dockerfile
+    image: safestream/inference:0.4.0
+    pull_policy: build
+    container_name: safestream-worker
+    depends_on:
+      inference:
+        condition: service_healthy
+    environment:
+      <<: *inference_env
+      WORKER_ENABLED: "true"
+      BROADCASTER_ENABLED: "false"
+      OTEL_SERVICE_NAME: safestream-worker
+    command: ["python", "-m", "src.cli", "worker"]
+    volumes:
+      - hf_cache:/app/.hf-cache
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Dashboard: React/Vite/Tailwind audit console served by nginx, which also
+  # reverse-proxies /api and /ws to the inference service.
+  # ---------------------------------------------------------------------------
+  dashboard:
+    build:
+      context: ./services/dashboard
+    container_name: safestream-dashboard
+    depends_on:
+      inference:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test:
+        ["CMD-SHELL", "wget -qO- http://localhost:8080/ >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Observability stack (opt-in via `docker compose --profile obs up`).
+  # The OpenTelemetry collector receives OTLP from inference + worker and
+  # forwards traces to Jaeger. Set OTEL_ENABLED=true in `.env` to actually
+  # emit spans; without that flag the services run untraced.
+  # ---------------------------------------------------------------------------
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.115.1
+    container_name: safestream-otel-collector
+    profiles: ["obs"]
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./infra/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317" # OTLP gRPC (inbound from services)
+      - "4318:4318" # OTLP HTTP
+    depends_on:
+      jaeger:
+        condition: service_started
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    container_name: safestream-jaeger
+    profiles: ["obs"]
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686" # Jaeger UI
+
+volumes:
+  kafka_data:
+  postgres_data:
+  qdrant_data:
+  hf_cache:

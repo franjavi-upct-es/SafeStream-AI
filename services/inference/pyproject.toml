@@ -1,0 +1,61 @@
+# services/inference/pyproject.toml
+[project]
+name = "safestream-inference"
+version = "1.0.0"
+description = "FastAPI inference service: text/image classification, embeddings, audit API."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi==0.115.4",
+  "uvicorn[standard]==0.32.0",
+  "pydantic==2.9.2",
+  "pydantic-settings==2.6.1",
+  "python-multipart==0.0.17",
+  "aiokafka==0.11.0",
+  "asyncpg==0.30.0",
+  "pillow==11.0.0",
+  "qdrant-client==1.12.1",
+  "structlog==24.4.0",
+  "slowapi==0.1.9",
+  "alembic==1.14.0",
+  "sqlalchemy==2.0.36",
+  "psycopg2-binary==2.9.10",
+  "prometheus-fastapi-instrumentator==7.0.0",
+  "opentelemetry-api==1.29.0",
+  "opentelemetry-sdk==1.29.0",
+  "opentelemetry-exporter-otlp-proto-grpc==1.29.0",
+  "opentelemetry-instrumentation-fastapi==0.50b0",
+  "opentelemetry-instrumentation-aiokafka==0.50b0",
+  "opentelemetry-instrumentation-asyncpg==0.50b0",
+  "opentelemetry-instrumentation-httpx==0.50b0",
+]
+
+# Heavy ML libs live in their own group so CI can install everything else
+# without pulling ~700 MB of torch wheels (tests stub them anyway).
+[project.optional-dependencies]
+ml = ["torch==2.5.1", "transformers==4.46.2", "sentence-transformers==3.3.1"]
+
+[dependency-groups]
+dev = [
+  "pytest==8.3.3",
+  "pytest-asyncio==0.24.0",
+  "httpx==0.27.2",
+  "ruff==0.7.4",
+  "mypy==1.13.0",
+  "types-pyyaml==6.0.12.20240917",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+# Resolve torch from the CPU-only PyPI mirror so we don't pull CUDA wheels.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

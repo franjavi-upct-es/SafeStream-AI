@@ -1,0 +1,150 @@
+# .github/workflows/ci.yml
+# Runs on every push and PR. Three independent jobs (one per service) so a
+# failure in one doesn't mask issues in another and the dashboard pipeline
+# isn't waiting on the slow torch install.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs of the same PR/branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pin Python and Node so all jobs agree.
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "20"
+
+jobs:
+  # ---------------------------------------------------------------------
+  # Inference: lint + type-check (light) + 47 unit tests.
+  # The full ML stack (torch, transformers) is NOT installed here — the
+  # tests stub it. We install the base deps + the dev group only, which
+  # keeps the job under a minute.
+  # ---------------------------------------------------------------------
+  inference:
+    name: Inference (Python)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/inference
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.4"
+          enable-cache: true
+          cache-dependency-glob: services/inference/uv.lock
+
+      - name: Sync (no ML extras, dev group only)
+        run: uv sync --frozen --no-install-project --group dev
+
+      - name: Lint (ruff)
+        working-directory: .
+        run: uv run --project services/inference ruff check services/inference
+
+      - name: Tests (pytest)
+        run: uv run --no-sync pytest -ra
+
+  # ---------------------------------------------------------------------
+  # Producer: lighter than inference; full deps fit fast.
+  # ---------------------------------------------------------------------
+  producer:
+    name: Producer (Python)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/producer
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.4"
+          enable-cache: true
+          cache-dependency-glob: services/producer/uv.lock
+
+      - name: Sync
+        run: uv sync --frozen --group dev
+
+      - name: Lint (ruff)
+        working-directory: .
+        run: uv run --project services/producer ruff check services/producer
+
+      - name: Tests (pytest)
+        run: uv run --no-sync pytest -ra
+
+  # ---------------------------------------------------------------------
+  # Dashboard: type-check + vitest + production build (no e2e).
+  # ---------------------------------------------------------------------
+  dashboard:
+    name: Dashboard (Node)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/dashboard
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: services/dashboard/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Type-check
+        run: npm run type-check
+
+      - name: Tests (vitest)
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+  # ---------------------------------------------------------------------
+  # Docker images: multi-arch build for amd64 + arm64. Runs only on main
+  # pushes (PRs build on amd64 only as a smoke test via the `services`
+  # build target — kept here as a sanity check that the Dockerfiles still
+  # work end-to-end with the lockfiles).
+  # ---------------------------------------------------------------------
+  images:
+    name: Docker images (multi-arch smoke test)
+    runs-on: ubuntu-latest
+    needs: [inference, producer, dashboard]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [producer, dashboard]
+        # Inference is omitted from the matrix because torch wheels for arm64
+        # aren't published on the CPU index we use; production deploys would
+        # build that one separately. See infra/notes/multi-arch.md.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build (amd64 + arm64, no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: services/${{ matrix.service }}
+          platforms: linux/amd64,linux/arm64
+          push: false
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,scope=${{ matrix.service }},mode=max

@@ -1,0 +1,31 @@
+id,comment_text,toxic,severe_toxic,obscene,threat,insult,identity_hate
+0001,"Thanks for the detailed write-up, this clarified a lot of things for me.",0,0,0,0,0,0
+0002,"I disagree with the premise but I appreciate the data behind your argument.",0,0,0,0,0,0
+0003,"Could someone explain what step three is supposed to look like in practice?",0,0,0,0,0,0
+0004,"You are completely worthless and should never post here again.",1,0,0,0,1,0
+0005,"Looking forward to the next release of the library, the roadmap is solid.",0,0,0,0,0,0
+0006,"This article is poorly researched and misses the most important sources.",0,0,0,0,0,0
+0007,"What an absolute moron, learn to read before commenting.",1,0,0,0,1,0
+0008,"Has anyone benchmarked this against the previous version on M-series hardware?",0,0,0,0,0,0
+0009,"If I see you at the meetup I will make sure you regret showing up.",1,1,0,1,1,0
+0010,"Great tutorial, the diagrams really helped me visualise the data flow.",0,0,0,0,0,0
+0011,"The documentation is fine but the examples could use more variety.",0,0,0,0,0,0
+0012,"Your contributions to this thread have been consistently unhelpful.",0,0,0,0,0,0
+0013,"Honestly the whole team should be replaced, none of them know what they are doing.",0,0,0,0,1,0
+0014,"Quick question: does the rate limiter respect the Retry-After header?",0,0,0,0,0,0
+0015,"Stop spreading misinformation, you clearly have no idea what you are talking about.",0,0,0,0,1,0
+0016,"I appreciate the quick response from the maintainers, this is a great community.",0,0,0,0,0,0
+0017,"This launch is incredible, congratulations to everyone involved.",0,0,0,0,0,0
+0018,"Pure trash, would not recommend to anyone with self-respect.",1,0,0,0,1,0
+0019,"Wondering if there is a recommended approach for sharding by tenant id.",0,0,0,0,0,0
+0020,"The presentation flowed nicely and the Q&A at the end was substantive.",0,0,0,0,0,0
+0021,"Anyone else getting a 502 on the staging environment since the last deploy?",0,0,0,0,0,0
+0022,"You bunch of clowns wouldn't recognise good engineering if it bit you.",1,0,0,0,1,0
+0023,"Constructive feedback: consider adding more integration tests around the auth layer.",0,0,0,0,0,0
+0024,"Beautifully designed dashboard, very pleasant to navigate.",0,0,0,0,0,0
+0025,"I'll be waiting outside the office to teach you a lesson personally.",1,1,0,1,1,0
+0026,"Has the model been evaluated on multilingual inputs or only English so far?",0,0,0,0,0,0
+0027,"Rolling back to the previous version fixed the issue on our side.",0,0,0,0,0,0
+0028,"Honestly impressed with the throughput numbers in the latest benchmark.",0,0,0,0,0,0
+0029,"Your kind doesn't belong on this platform, get out.",1,0,0,0,1,1
+0030,"The release notes are unusually detailed this time, very helpful.",0,0,0,0,0,0

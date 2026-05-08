@@ -1,0 +1,76 @@
+# pyproject.toml
+# Tooling-only manifest for the repository. Each service still installs its
+# own runtime requirements through requirements.txt; this file gives ruff,
+# mypy and pytest a single, consistent config to read from.
+
+[project]
+name = "safestream-ai"
+version = "1.0.0"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.uv.workspace]
+members = ["services/inference", "services/producer"]
+
+[tool.ruff]
+line-length = 80
+target-version = "py312"
+extend-exclude = [
+  ".venv",
+  "**/__pycache__",
+  "**/.pytest_cache",
+  "services/dashboard/node_modules",
+  "services/dashboard/dist",
+  "services/producer/data",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["services/inference/tests", "services/producer/tests"]
+pythonpath = [
+    "services/inference/src",
+    "services/producer/src",
+]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff.lint]
+select = [
+  "E",   # pycodestyle errors
+  "F",   # pyflakes
+  "I",   # isort
+  "B",   # flake8-bugbear
+  "UP",  # pyupgrade
+  "SIM", # flake8-simplify
+]
+ignore = [
+  "E501",   # line length is enforced by formatter; ruff still warns when impossible
+  "B008",   # FastAPI's Depends() default uses function calls intentionally
+  "SIM105", # contextlib.suppress vs try/except is a style preference
+]
+
+[tool.ruff.lint.per-file-ignores]
+"services/*/tests/**/*.py" = [
+  "B011", # asserts in tests are fine
+  "F401", # unused-import noise during fixture imports
+]
+"**/conftest.py" = ["F401"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.mypy]
+python_version = "3.12"
+strict = false # we'll tighten this incrementally
+warn_unused_ignores = true
+warn_return_any = true
+ignore_missing_imports = true
+exclude = [
+  "services/inference/tests/",
+  "services/producer/tests/",
+  "services/dashboard/",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.3.3", "pytest-asyncio>=0.24.0"]

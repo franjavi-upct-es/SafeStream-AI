@@ -1,0 +1,100 @@
+/* services/dashboard/src/index.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* -----------------------------------------------------------------------
+ * Palette: a control-room dark theme. The visual language relies on hard
+ * edges, dense monospaced numerics, and one accent colour. Verdicts get
+ * their own colour, and that's where most of the colour budget goes.
+ * --------------------------------------------------------------------- */
+:root {
+    --ink: #07070a; /* page background */
+    --panel: #0f0f15; /* main content surface */
+    --panel-2: #15151d; /* nested cards, hover states */
+    --grid: #1d1d27; /* dotted grid overlay */
+    --rule: #262631; /* borders, dividers */
+
+    --fg: #ececf0;
+    --fg-dim: #9a9aa6;
+    --fg-muted: #5d5d6b;
+
+    --safe: #4ade80;
+    --review: #fbbf24;
+    --block: #fb7185;
+    --escalate: #c084fc;
+
+    --accent: #fb923c; /* selection, focus, the only "warm" pop */
+}
+
+html,
+body,
+#root {
+    height: 100%;
+    background-color: var(--ink);
+    color: var(--fg);
+}
+
+body {
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-feature-settings: "ss02", "tnum";
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* Subtle dotted grid in the background — pure CSS, no images. */
+    background-image: radial-gradient(var(--grid) 1px, transparent 1px);
+    background-size: 24px 24px;
+    background-position: -1px -1px;
+}
+
+/* Focus: an orange edge instead of the default blue ring. */
+*:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 1px;
+}
+
+/* Custom scrollbars to match the aesthetic. */
+*::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+*::-webkit-scrollbar-track {
+    background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+    background: var(--rule);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+    background: var(--fg-muted);
+    background-clip: padding-box;
+    border: 2px solid transparent;
+}
+
+/* -----------------------------------------------------------------------
+ * Component-level conveniences kept here so we don't pollute every JSX
+ * file with the same long Tailwind chain.
+ * --------------------------------------------------------------------- */
+@layer components {
+    /* Headers feel like ticker labels: uppercase, wide tracking, mono. */
+    .label {
+        @apply font-mono uppercase tracking-widest text-[10px] text-fg-muted;
+    }
+
+    /* Surface used by every panel/card. Hard borders, no rounding. */
+    .surface {
+        @apply bg-panel border border-rule;
+    }
+
+    /* Keyboard hint chip used in the help bar. */
+    .kbd {
+        @apply font-mono text-[10px] tracking-wider px-1.5 py-0.5
+           border border-rule bg-panel-2 text-fg-dim;
+    }
+}
+
+/* Recharts overrides: kill the default white bg behind tooltips. */
+.recharts-tooltip-wrapper {
+    outline: none !important;
+}

@@ -1,0 +1,38 @@
+# infra/otel-collector.yaml
+# Minimal OpenTelemetry Collector pipeline for the local stack:
+#   * OTLP receiver on the standard ports (4317 gRPC, 4318 HTTP).
+#   * Batch processor to coalesce small spans before export.
+#   * Single OTLP HTTP exporter pointing at Jaeger's all-in-one collector.
+#
+# Add Tempo, Honeycomb, etc. as additional exporters when promoting this
+# config to a real environment.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 512
+
+exporters:
+  otlp/jaeger:
+    # Jaeger's all-in-one image accepts OTLP gRPC on 4317.
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+  # Useful when something is wrong; uncomment to also tee spans to stdout.
+  # debug:
+  #   verbosity: detailed
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/jaeger]
