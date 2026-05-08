@@ -20,11 +20,11 @@ from __future__ import annotations
 import asyncio
 import signal
 import sys
-from app_logging import configure_logging, get_logger
 from typing import NoReturn
 
 import config
 import uvicorn
+from app_logging import configure_logging, get_logger
 from tracing import setup_tracing
 
 configure_logging()

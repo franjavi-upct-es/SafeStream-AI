@@ -15,8 +15,8 @@ import time
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from app_logging import get_logger
 
+from app_logging import get_logger
 from config import settings
 from models.base import ModelInfo
 from sentence_transformers import SentenceTransformer

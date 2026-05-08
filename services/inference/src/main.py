@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
-from app_logging import configure_logging, get_logger
 
 from api.deps import limiter
 from api.routes_audits import router as audits_router
@@ -25,6 +24,7 @@ from api.routes_health import router as health_router
 from api.routes_metrics import router as metrics_router
 from api.routes_search import router as search_router
 from api.routes_stream import router as stream_router
+from app_logging import configure_logging, get_logger
 from config import settings
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

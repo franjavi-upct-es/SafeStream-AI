@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 import asyncio
-from app_logging import get_logger
 
 import asyncpg
+from app_logging import get_logger
 from config import settings
 
 log = get_logger(__name__)

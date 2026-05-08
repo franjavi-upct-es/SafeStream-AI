@@ -6,7 +6,6 @@ import logging
 import sys
 
 import structlog
-
 from config import settings
 
 

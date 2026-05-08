@@ -9,8 +9,8 @@ the worker and the request handlers can grab the same instance.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from app_logging import get_logger
 
+from app_logging import get_logger
 from config import settings
 from models.embeddings import TextEmbedder, build_text_embedder
 from models.text import TextClassifier, build_text_classifier

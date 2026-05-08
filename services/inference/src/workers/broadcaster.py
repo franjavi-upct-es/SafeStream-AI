@@ -13,10 +13,10 @@ Running this as its own consumer group means:
 """
 
 import asyncio
-from app_logging import get_logger
 
 from aiokafka import AIOKafkaConsumer
 from aiokafka.errors import KafkaConnectionError
+from app_logging import get_logger
 from config import settings
 from workers.connection_manager import ConnectionManager
 

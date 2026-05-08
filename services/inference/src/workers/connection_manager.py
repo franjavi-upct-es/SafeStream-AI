@@ -6,8 +6,8 @@ a slow / dead client never blocks the others - we time out and prune it.
 """
 
 import asyncio
-from app_logging import get_logger
 
+from app_logging import get_logger
 from fastapi import WebSocket
 
 log = get_logger(__name__)

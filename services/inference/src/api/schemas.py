@@ -7,9 +7,8 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
-
 from domain.verdict import Verdict
+from pydantic import BaseModel, Field
 
 
 class TextClassifyRequest(BaseModel):

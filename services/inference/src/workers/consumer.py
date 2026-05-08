@@ -20,12 +20,12 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import UTC, datetime
-from app_logging import get_logger
 from typing import Any
 from uuid import UUID
 
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer, ConsumerRecord
 from aiokafka.errors import KafkaConnectionError
+from app_logging import get_logger
 from config import settings
 from domain.events import ContentEvent
 from domain.verdict import Verdict, derive_verdict

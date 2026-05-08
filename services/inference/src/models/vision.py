@@ -10,9 +10,9 @@ import asyncio
 import io
 import time
 from concurrent.futures import ThreadPoolExecutor
-from app_logging import get_logger
 from typing import Any
 
+from app_logging import get_logger
 from config import settings
 from models.base import ModelInfo, Prediction
 from PIL import Image

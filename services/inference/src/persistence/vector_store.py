@@ -16,10 +16,10 @@ Two design notes worth surfacing:
 import asyncio
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from app_logging import get_logger
 from typing import Any
 from uuid import UUID
 
+from app_logging import get_logger
 from config import settings
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.http import models as qmodels

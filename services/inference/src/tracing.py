@@ -24,7 +24,6 @@ when iterating locally without a collector.
 from __future__ import annotations
 
 from app_logging import get_logger
-
 from config import settings
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
