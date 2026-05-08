@@ -42,7 +42,7 @@ jobs:
         with:
           version: "0.5.4"
           enable-cache: true
-          cache-dependency-glob: services/inference/uv.lock
+          cache-dependency-glob: uv.lock
 
       - name: Sync (no ML extras, dev group only)
         run: uv sync --frozen --no-install-project --group dev
@@ -71,7 +71,7 @@ jobs:
         with:
           version: "0.5.4"
           enable-cache: true
-          cache-dependency-glob: services/producer/uv.lock
+          cache-dependency-glob: uv.lock
 
       - name: Sync
         run: uv sync --frozen --group dev
